@@ -1,66 +1,53 @@
-## Foundry
+# QuiniPool
 
-**Foundry is a blazing fast, portable and modular toolkit for Ethereum application development written in Rust.**
+On-chain soccer prediction pool. Players pay an ERC20 entry fee, predict
+scores for a fixed list of matches, and split the pot based on a points
+leaderboard.
 
-Foundry consists of:
+## Flow
 
-- **Forge**: Ethereum testing framework (like Truffle, Hardhat and DappTools).
-- **Cast**: Swiss army knife for interacting with EVM smart contracts, sending transactions and getting chain data.
-- **Anvil**: Local Ethereum node, akin to Ganache, Hardhat Network.
-- **Chisel**: Fast, utilitarian, and verbose solidity REPL.
+1. **Deploy** — owner sets the token, entry fee, and the list of matches (home/away/kickoff).
+2. **Open** — players call `joinPool()` (pays `entryFee`).
+3. **Active** — owner calls `startPool()` (requires ≥ 2 players). Players submit predictions via `submitPrediction(matchId, homeScore, awayScore)` before each kickoff.
+4. **Results** — owner calls `setMatchResult(matchId, homeScore, awayScore)` for each match.
+5. **Finished** — owner calls `finishPool()` once all results are set.
+6. **Claim** — top-3 players call `claimPrize()` to withdraw their share.
 
-## Documentation
+## Scoring
 
-https://book.getfoundry.sh/
+Per match, against each player's prediction:
 
-## Usage
+| Case | Points |
+|---|---|
+| Exact score | 10 |
+| Correct 1X2 outcome only | 4 |
+| Wrong outcome / no prediction | 0 |
 
-### Build
+`calculatePoints(address)` is `view` — call it free off-chain at any time.
 
-```shell
-$ forge build
+## Prizes
+
+Split by leaderboard position (distinct scores, sports-ranking style):
+
+| Position | Share |
+|---|---|
+| 1st | 50% |
+| 2nd | 30% |
+| 3rd | 20% |
+
+Ties at the same position split that position's share evenly. Lower
+positions are not shifted. Tie dust (rounding) stays in the contract.
+
+## Commands
+
+All workflows are wrapped in the `Makefile`. Run `make help` for the full list. Most used:
+
+```bash
+make install        # fetch git submodules (OpenZeppelin, forge-std)
+make build          # compile
+make test           # run all tests (verbose)
+make coverage       # HTML coverage report, opens in browser
+make fmt            # format
 ```
 
-### Test
-
-```shell
-$ forge test
-```
-
-### Format
-
-```shell
-$ forge fmt
-```
-
-### Gas Snapshots
-
-```shell
-$ forge snapshot
-```
-
-### Anvil
-
-```shell
-$ anvil
-```
-
-### Deploy
-
-```shell
-$ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key>
-```
-
-### Cast
-
-```shell
-$ cast <subcommand>
-```
-
-### Help
-
-```shell
-$ forge --help
-$ anvil --help
-$ cast --help
-```
+Current coverage: 100% lines / statements / branches / funcs.
