@@ -38,6 +38,8 @@ contract QuiniPoolTest is Test {
         quiniPool.joinPool();
     }
 
+    // --- startPool ---
+
     function testStartPool() public {
         // Join the pool with two users
         _joinAsUser(vm.addr(1));
@@ -67,6 +69,8 @@ contract QuiniPoolTest is Test {
         vm.expectRevert("Need at least 2 participants to start the pool");
         quiniPool.startPool();
     }
+
+    // --- joinPool ---
 
     function testJoinPool() public {
         // Simulate a user joining the pool
@@ -103,6 +107,8 @@ contract QuiniPoolTest is Test {
         vm.stopPrank();
     }
 
+    // --- constructor ---
+
     function testConstructorRevertsWhenEntryFeeIsZero() public {
         vm.expectRevert("Entry fee must be greater than zero");
         new QuiniPool(IERC20(address(token)), 0, homeTeams, awayTeams, kickoffTimes);
@@ -130,6 +136,8 @@ contract QuiniPoolTest is Test {
         new QuiniPool(IERC20(address(token)), entryFee, homeTeams, awayTeams, mismatchedKickoffs);
     }
 
+    // --- joinPool reverts ---
+
     function testJoinPoolRevertsWhenPoolNotOpen() public {
         // Lead the pool to a closed state
         _joinAsUser(vm.addr(1));
@@ -145,6 +153,8 @@ contract QuiniPoolTest is Test {
         quiniPool.joinPool();
         vm.stopPrank();
     }
+
+    // --- submitPrediction ---
 
     function testSubmitPredictionRevertsWhenPoolNotActive() public {
         // Just one user joins the pool, so it remains in Open state
@@ -210,5 +220,205 @@ contract QuiniPoolTest is Test {
         assertEq(homeScore, 2, "Home score should be 2");
         assertEq(awayScore, 1, "Away score should be 1");
         assertTrue(wasPredicted, "Prediction should be marked as submitted");
+    }
+
+    // --- setMatchResult ---
+
+    function testSetMatchResult() public {
+        // Two users join the pool and start it
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
+
+        // Set the result for the first match
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+
+        // Check if the result is stored correctly
+        (,,, uint8 homeScore, uint8 awayScore, bool resultSet) = quiniPool.matches(0);
+        assertEq(homeScore, 2, "Home score should be 2");
+        assertEq(awayScore, 1, "Away score should be 1");
+        assertTrue(resultSet, "Result should be marked as set");
+    }
+
+    function _setupActivePoolWith(address a, address b) internal {
+        _joinAsUser(a);
+        _joinAsUser(b);
+        quiniPool.startPool();
+    }
+
+    function testSetMatchResultRevertsWhenPoolNotActive() public {
+        // Pool stays Open
+        vm.prank(quiniPool.owner());
+        vm.expectRevert("Pool is not active");
+        quiniPool.setMatchResult(0, 2, 1);
+    }
+
+    function testSetMatchResultRevertsWhenMatchIdInvalid() public {
+        _setupActivePoolWith(vm.addr(1), vm.addr(2));
+
+        vm.prank(quiniPool.owner());
+        vm.expectRevert("Invalid match ID");
+        quiniPool.setMatchResult(999, 2, 1);
+    }
+
+    function testSetMatchResultRevertsWhenAlreadySet() public {
+        _setupActivePoolWith(vm.addr(1), vm.addr(2));
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+
+        vm.prank(quiniPool.owner());
+        vm.expectRevert("Result already set for this match");
+        quiniPool.setMatchResult(0, 3, 2);
+    }
+
+    // --- calculatePoints (claim-on-read) ---
+
+    function testCalculatePointsReturnsZeroWhenNoResultYet() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // u1 predicts but the owner hasn't set any match result yet
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 2, 1);
+
+        assertEq(quiniPool.calculatePoints(u1), 0, "No result set yet should yield 0");
+    }
+
+    function testCalculatePointsReturnsZeroForNonPredictor() public {
+        address u1 = vm.addr(1);
+        address u2 = vm.addr(2);
+        _setupActivePoolWith(u1, u2);
+
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 2, 1);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+
+        assertEq(quiniPool.calculatePoints(u2), 0, "Non-predictor should get 0");
+    }
+
+    function testCalculatePointsAwardsTenOnExactScore() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 2, 1);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+
+        assertEq(quiniPool.calculatePoints(u1), 10, "Exact score should award 10");
+    }
+
+    function testCalculatePointsAwardsFourOnHomeWinOutcome() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // u1 predicts 3-1 (home win), actual 2-0 (home win)
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 3, 1);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 0);
+
+        assertEq(quiniPool.calculatePoints(u1), 4, "Same outcome (home win) should award 4");
+    }
+
+    function testCalculatePointsAwardsFourOnDrawOutcome() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // u1 predicts 2-2 (draw), actual 1-1 (draw)
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 2, 2);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 1, 1);
+
+        assertEq(quiniPool.calculatePoints(u1), 4, "Same outcome (draw) should award 4");
+    }
+
+    function testCalculatePointsAwardsFourOnAwayWinOutcome() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // u1 predicts 0-3 (away win), actual 1-2 (away win)
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 0, 3);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 1, 2);
+
+        assertEq(quiniPool.calculatePoints(u1), 4, "Same outcome (away win) should award 4");
+    }
+
+    function testCalculatePointsAwardsZeroOnWrongOutcome() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // u1 predicts home win 3-1, actual away win 0-2
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 3, 1);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 0, 2);
+
+        assertEq(quiniPool.calculatePoints(u1), 0, "Wrong outcome should award 0");
+    }
+
+    function testCalculatePointsSumsAcrossMatches() public {
+        address u1 = vm.addr(1);
+        _setupActivePoolWith(u1, vm.addr(2));
+
+        // Match 0: exact (10), Match 1: same outcome only (4)
+        vm.prank(u1);
+        quiniPool.submitPrediction(0, 2, 1);
+        vm.prank(u1);
+        quiniPool.submitPrediction(1, 3, 1);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(1, 2, 0);
+
+        assertEq(quiniPool.calculatePoints(u1), 14, "10 (exact) + 4 (outcome) across matches");
+    }
+
+    // --- finishPool ---
+
+    function testFinishPoolRevertsWhenPoolNotActive() public {
+        // Pool stays Open
+        vm.prank(quiniPool.owner());
+        vm.expectRevert("Pool is not active");
+        quiniPool.finishPool();
+    }
+
+    function testFinishPoolRevertsWhenNotAllResultsSet() public {
+        _setupActivePoolWith(vm.addr(1), vm.addr(2));
+
+        // Set result for match 0 only; match 1 still pending
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+
+        vm.prank(quiniPool.owner());
+        vm.expectRevert("All match results must be set before finishing the pool");
+        quiniPool.finishPool();
+    }
+
+    function testFinishPoolSuccess() public {
+        _setupActivePoolWith(vm.addr(1), vm.addr(2));
+
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(0, 2, 1);
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(1, 0, 0);
+
+        vm.prank(quiniPool.owner());
+        quiniPool.finishPool();
+
+        assertEq(uint256(quiniPool.poolStatus()), uint256(QuiniPool.PoolStatus.Finished), "Pool should be Finished");
     }
 }

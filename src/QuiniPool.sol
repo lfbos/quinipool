@@ -15,6 +15,12 @@ contract QuiniPool is Ownable {
         Finished
     }
 
+    enum Outcome {
+        HomeWin,
+        Draw,
+        AwayWin
+    }
+
     // Structs
     struct Match {
         string homeTeam;
@@ -31,6 +37,10 @@ contract QuiniPool is Ownable {
         bool wasPredicted;
     }
 
+    // Scoring rules
+    uint256 private constant POINTS_EXACT_SCORE = 10;
+    uint256 private constant POINTS_OUTCOME_ONLY = 4;
+
     // State variables
     IERC20 public token;
     uint256 public entryFee;
@@ -42,7 +52,6 @@ contract QuiniPool is Ownable {
     // Mappings
     mapping(uint256 => Match) public matches;
     mapping(address => bool) public hasParticipated;
-    mapping(address => uint256) public points;
     mapping(address => mapping(uint256 => Prediction)) public predictions;
 
     constructor(
@@ -81,8 +90,10 @@ contract QuiniPool is Ownable {
 
     // Events
     event PoolStarted(uint256 totalParticipants, uint256 totalPool);
+    event PoolFinished(uint256 totalPool);
     event PlayerJoined(address indexed player, uint256 entryFee);
     event PredictionSubmitted(address indexed player, uint256 matchId, uint8 homeScore, uint8 awayScore);
+    event MatchResultSet(uint256 matchId, uint8 homeScore, uint8 awayScore);
 
     // Functions
 
@@ -126,5 +137,59 @@ contract QuiniPool is Ownable {
             Prediction({homeScore: _homeScore, awayScore: _awayScore, wasPredicted: true});
 
         emit PredictionSubmitted(msg.sender, _matchId, _homeScore, _awayScore);
+    }
+
+    function setMatchResult(uint256 _matchId, uint8 _homeScore, uint8 _awayScore) external onlyOwner {
+        require(poolStatus == PoolStatus.Active, "Pool is not active");
+        require(_matchId < totalMatches, "Invalid match ID");
+        require(!matches[_matchId].resultSet, "Result already set for this match");
+
+        matches[_matchId].homeScore = _homeScore;
+        matches[_matchId].awayScore = _awayScore;
+        matches[_matchId].resultSet = true;
+
+        emit MatchResultSet(_matchId, _homeScore, _awayScore);
+    }
+
+    function finishPool() external onlyOwner {
+        require(poolStatus == PoolStatus.Active, "Pool is not active");
+
+        // Ensure all match results are set
+        for (uint256 i = 0; i < totalMatches; i++) {
+            require(matches[i].resultSet, "All match results must be set before finishing the pool");
+        }
+
+        poolStatus = PoolStatus.Finished;
+
+        emit PoolFinished(totalPool);
+    }
+
+    function calculatePoints(address _user) public view returns (uint256 total) {
+        for (uint256 i = 0; i < totalMatches; i++) {
+            Match storage m = matches[i];
+            if (!m.resultSet) continue;
+
+            Prediction storage pred = predictions[_user][i];
+            if (!pred.wasPredicted) continue;
+
+            total += _pointsFor(pred.homeScore, pred.awayScore, m.homeScore, m.awayScore);
+        }
+    }
+
+    // 10 = exact score, 4 = same 1X2 outcome, 0 = otherwise
+    function _pointsFor(uint8 _predHome, uint8 _predAway, uint8 _matchHome, uint8 _matchAway)
+        internal
+        pure
+        returns (uint256)
+    {
+        if (_predHome == _matchHome && _predAway == _matchAway) return POINTS_EXACT_SCORE;
+        if (_outcome(_predHome, _predAway) == _outcome(_matchHome, _matchAway)) return POINTS_OUTCOME_ONLY;
+        return 0;
+    }
+
+    function _outcome(uint8 _home, uint8 _away) internal pure returns (Outcome) {
+        if (_home > _away) return Outcome.HomeWin;
+        if (_home < _away) return Outcome.AwayWin;
+        return Outcome.Draw;
     }
 }

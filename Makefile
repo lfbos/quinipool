@@ -37,9 +37,6 @@ fmt:
 fmt-check:
 	forge fmt --check
 
-coverage:
-	forge coverage --no-match-coverage "(test|script)"
-
 coverage-html: lcov.info
 	@command -v genhtml >/dev/null 2>&1 || { \
 		echo "Error: 'genhtml' not found. Install it with: brew install lcov"; exit 1; \
@@ -54,7 +51,7 @@ coverage-html: lcov.info
 lcov.info:
 	forge coverage --report lcov --no-match-coverage "(test|script)"
 
-coverage-open: coverage-html
+coverage: coverage-html
 	make clean && make coverage-html && open coverage/index.html
 
 clean:
