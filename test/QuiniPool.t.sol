@@ -435,10 +435,7 @@ contract QuiniPoolTest is Test {
     }
 
     // Leaderboard: u1=20 (exact+exact), u2=14 (outcome+exact), u3=8 (outcome+outcome), u4=0
-    function _setupFinishedPoolWithFourPlayers()
-        internal
-        returns (address u1, address u2, address u3, address u4)
-    {
+    function _setupFinishedPoolWithFourPlayers() internal returns (address u1, address u2, address u3, address u4) {
         u1 = vm.addr(1);
         u2 = vm.addr(2);
         u3 = vm.addr(3);
