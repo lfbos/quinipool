@@ -2,9 +2,10 @@
 pragma solidity ^0.8.30;
 
 import {SafeERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/utils/SafeERC20.sol";
+import {Ownable} from "../lib/openzeppelin-contracts/contracts/access/Ownable.sol";
 import {IERC20} from "../lib/openzeppelin-contracts/contracts/token/ERC20/IERC20.sol";
 
-contract QuiniPool {
+contract QuiniPool is Ownable {
     using SafeERC20 for IERC20;
 
     // Enums
@@ -32,7 +33,6 @@ contract QuiniPool {
 
     // State variables
     IERC20 public token;
-    address public owner;
     uint256 public entryFee;
     uint256 public totalPool;
     uint256 public totalMatches;
@@ -51,7 +51,7 @@ contract QuiniPool {
         string[] memory _homeTeams,
         string[] memory _awayTeams,
         uint256[] memory _kickoffTimes
-    ) {
+    ) Ownable(msg.sender) {
         // Validations
         require(_entryFee > 0, "Entry fee must be greater than zero");
         require(_homeTeams.length > 0, "At least one match must be provided");
@@ -60,7 +60,6 @@ contract QuiniPool {
             "Input arrays must have the same length"
         );
 
-        owner = msg.sender;
         token = _token;
         entryFee = _entryFee;
         totalMatches = _homeTeams.length;
@@ -78,5 +77,30 @@ contract QuiniPool {
         }
 
         poolStatus = PoolStatus.Open;
+    }
+
+    // Events
+    event PlayerJoined(address indexed player, uint256 entryFee);
+
+    // Functions
+
+    function joinPool() external {
+        require(poolStatus == PoolStatus.Open, "Pool is not open for joining");
+        require(!hasParticipated[msg.sender], "Already joined the pool");
+
+        // Mark the participant as joined
+        hasParticipated[msg.sender] = true;
+
+        // Add the participant to the list
+        participants.push(msg.sender);
+
+        // Add the entry fee to the total pool
+        totalPool += entryFee;
+
+        // Transfer the entry fee from the participant to the contract
+        token.safeTransferFrom(msg.sender, address(this), entryFee);
+
+        // Emit an event PlayerJoined
+        emit PlayerJoined(msg.sender, entryFee);
     }
 }
