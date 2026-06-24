@@ -44,4 +44,39 @@ contract QuiniPool {
     mapping(address => bool) public hasParticipated;
     mapping(address => uint256) public points;
     mapping(address => mapping(uint256 => Prediction)) public predictions;
+
+    constructor(
+        IERC20 _token,
+        uint256 _entryFee,
+        string[] memory _homeTeams,
+        string[] memory _awayTeams,
+        uint256[] memory _kickoffTimes
+    ) {
+        // Validations
+        require(_entryFee > 0, "Entry fee must be greater than zero");
+        require(_homeTeams.length > 0, "At least one match must be provided");
+        require(
+            _homeTeams.length == _awayTeams.length && _homeTeams.length == _kickoffTimes.length,
+            "Input arrays must have the same length"
+        );
+
+        owner = msg.sender;
+        token = _token;
+        entryFee = _entryFee;
+        totalMatches = _homeTeams.length;
+
+        // Initialize matches
+        for (uint256 i = 0; i < totalMatches; i++) {
+            matches[i] = Match({
+                homeTeam: _homeTeams[i],
+                awayTeam: _awayTeams[i],
+                kickoffTime: _kickoffTimes[i],
+                homeScore: 0,
+                awayScore: 0,
+                resultSet: false
+            });
+        }
+
+        poolStatus = PoolStatus.Open;
+    }
 }
