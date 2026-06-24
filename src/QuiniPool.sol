@@ -41,6 +41,11 @@ contract QuiniPool is Ownable {
     uint256 private constant POINTS_EXACT_SCORE = 10;
     uint256 private constant POINTS_OUTCOME_ONLY = 4;
 
+    // Prize distribution percentages
+    uint256 private constant FIRST_PLACE_SHARE = 50;
+    uint256 private constant SECOND_PLACE_SHARE = 30;
+    uint256 private constant THIRD_PLACE_SHARE = 20;
+
     // State variables
     IERC20 public token;
     uint256 public entryFee;
@@ -53,6 +58,7 @@ contract QuiniPool is Ownable {
     mapping(uint256 => Match) public matches;
     mapping(address => bool) public hasParticipated;
     mapping(address => mapping(uint256 => Prediction)) public predictions;
+    mapping(address => bool) public hasClaimed;
 
     constructor(
         IERC20 _token,
@@ -94,6 +100,7 @@ contract QuiniPool is Ownable {
     event PlayerJoined(address indexed player, uint256 entryFee);
     event PredictionSubmitted(address indexed player, uint256 matchId, uint8 homeScore, uint8 awayScore);
     event MatchResultSet(uint256 matchId, uint8 homeScore, uint8 awayScore);
+    event PrizeClaimed(address indexed player, uint256 position, uint256 prize);
 
     // Functions
 
@@ -191,5 +198,56 @@ contract QuiniPool is Ownable {
         if (_home > _away) return Outcome.HomeWin;
         if (_home < _away) return Outcome.AwayWin;
         return Outcome.Draw;
+    }
+
+    function claimPrize() external {
+        require(poolStatus == PoolStatus.Finished, "Pool is not finished yet");
+        require(hasParticipated[msg.sender], "You did not participate");
+        require(!hasClaimed[msg.sender], "Prize already claimed");
+
+        // Precompute every participant's score once (avoids O(N²·M) re-computation).
+        uint256 n = participants.length;
+        uint256[] memory scores = new uint256[](n);
+        uint256 myPoints = calculatePoints(msg.sender);
+        for (uint256 i = 0; i < n; i++) {
+            scores[i] = calculatePoints(participants[i]);
+        }
+
+        uint256 higherScores = 0; // distinct scores above me
+        uint256 tiedWithMe = 0; // players with my exact score (me included)
+
+        for (uint256 i = 0; i < n; i++) {
+            uint256 iPoints = scores[i];
+
+            if (iPoints == myPoints) {
+                tiedWithMe++;
+            } else if (iPoints > myPoints) {
+                bool seen = false;
+                for (uint256 j = 0; j < i; j++) {
+                    if (scores[j] == iPoints) {
+                        seen = true;
+                        break;
+                    }
+                }
+                if (!seen) higherScores++;
+            }
+        }
+
+        require(higherScores < 3, "You are not in the top 3");
+
+        hasClaimed[msg.sender] = true;
+
+        uint256 prize = _calculatePrize(higherScores) / tiedWithMe;
+
+        token.safeTransfer(msg.sender, prize);
+
+        emit PrizeClaimed(msg.sender, higherScores + 1, prize);
+    }
+
+    // Caller guarantees _position < 3 via require in claimPrize.
+    function _calculatePrize(uint256 _position) internal view returns (uint256) {
+        if (_position == 0) return (totalPool * FIRST_PLACE_SHARE) / 100;
+        if (_position == 1) return (totalPool * SECOND_PLACE_SHARE) / 100;
+        return (totalPool * THIRD_PLACE_SHARE) / 100;
     }
 }

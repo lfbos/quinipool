@@ -421,4 +421,165 @@ contract QuiniPoolTest is Test {
 
         assertEq(uint256(quiniPool.poolStatus()), uint256(QuiniPool.PoolStatus.Finished), "Pool should be Finished");
     }
+
+    // --- claimPrize ---
+
+    function _predict(address u, uint256 matchId, uint8 h, uint8 a) internal {
+        vm.prank(u);
+        quiniPool.submitPrediction(matchId, h, a);
+    }
+
+    function _setResult(uint256 matchId, uint8 h, uint8 a) internal {
+        vm.prank(quiniPool.owner());
+        quiniPool.setMatchResult(matchId, h, a);
+    }
+
+    // Leaderboard: u1=20 (exact+exact), u2=14 (outcome+exact), u3=8 (outcome+outcome), u4=0
+    function _setupFinishedPoolWithFourPlayers()
+        internal
+        returns (address u1, address u2, address u3, address u4)
+    {
+        u1 = vm.addr(1);
+        u2 = vm.addr(2);
+        u3 = vm.addr(3);
+        u4 = vm.addr(4);
+        _joinAsUser(u1);
+        _joinAsUser(u2);
+        _joinAsUser(u3);
+        _joinAsUser(u4);
+        quiniPool.startPool();
+        _predict(u1, 0, 2, 1);
+        _predict(u1, 1, 1, 1);
+        _predict(u2, 0, 3, 1);
+        _predict(u2, 1, 1, 1);
+        _predict(u3, 0, 3, 1);
+        _predict(u3, 1, 2, 2);
+        _predict(u4, 0, 0, 2);
+        _predict(u4, 1, 0, 2);
+        _setResult(0, 2, 1);
+        _setResult(1, 1, 1);
+        vm.prank(quiniPool.owner());
+        quiniPool.finishPool();
+    }
+
+    function testClaimPrizeRevertsWhenPoolNotFinished() public {
+        address u1 = vm.addr(1);
+        _joinAsUser(u1);
+
+        vm.prank(u1);
+        vm.expectRevert("Pool is not finished yet");
+        quiniPool.claimPrize();
+    }
+
+    function testClaimPrizeRevertsWhenNotParticipant() public {
+        _setupFinishedPoolWithFourPlayers();
+
+        vm.prank(vm.addr(99));
+        vm.expectRevert("You did not participate");
+        quiniPool.claimPrize();
+    }
+
+    function testClaimPrizeRevertsWhenAlreadyClaimed() public {
+        (address u1,,,) = _setupFinishedPoolWithFourPlayers();
+
+        vm.prank(u1);
+        quiniPool.claimPrize();
+
+        vm.prank(u1);
+        vm.expectRevert("Prize already claimed");
+        quiniPool.claimPrize();
+    }
+
+    function testClaimPrizeRevertsWhenNotInTop3() public {
+        (,,, address u4) = _setupFinishedPoolWithFourPlayers();
+
+        vm.prank(u4);
+        vm.expectRevert("You are not in the top 3");
+        quiniPool.claimPrize();
+    }
+
+    function testClaimPrizeFirstPlaceGets50() public {
+        (address u1,,,) = _setupFinishedPoolWithFourPlayers();
+        uint256 expected = (quiniPool.totalPool() * 50) / 100;
+
+        vm.prank(u1);
+        quiniPool.claimPrize();
+
+        assertEq(token.balanceOf(u1), expected, "1st place should get 50%");
+    }
+
+    function testClaimPrizeSecondPlaceGets30() public {
+        (, address u2,,) = _setupFinishedPoolWithFourPlayers();
+        uint256 expected = (quiniPool.totalPool() * 30) / 100;
+
+        vm.prank(u2);
+        quiniPool.claimPrize();
+
+        assertEq(token.balanceOf(u2), expected, "2nd place should get 30%");
+    }
+
+    function testClaimPrizeThirdPlaceGets20() public {
+        (,, address u3,) = _setupFinishedPoolWithFourPlayers();
+        uint256 expected = (quiniPool.totalPool() * 20) / 100;
+
+        vm.prank(u3);
+        quiniPool.claimPrize();
+
+        assertEq(token.balanceOf(u3), expected, "3rd place should get 20%");
+    }
+
+    function testClaimPrizeTiesAboveCountAsOneScore() public {
+        // u1=u2=20 (tied 1st), u3=14 (should be 2nd, not 3rd)
+        address u1 = vm.addr(1);
+        address u2 = vm.addr(2);
+        address u3 = vm.addr(3);
+        _joinAsUser(u1);
+        _joinAsUser(u2);
+        _joinAsUser(u3);
+        quiniPool.startPool();
+        _predict(u1, 0, 2, 1);
+        _predict(u1, 1, 1, 1);
+        _predict(u2, 0, 2, 1);
+        _predict(u2, 1, 1, 1);
+        _predict(u3, 0, 3, 1);
+        _predict(u3, 1, 1, 1);
+        _setResult(0, 2, 1);
+        _setResult(1, 1, 1);
+        vm.prank(quiniPool.owner());
+        quiniPool.finishPool();
+
+        uint256 expectedSecond = (quiniPool.totalPool() * 30) / 100;
+        vm.prank(u3);
+        quiniPool.claimPrize();
+        assertEq(token.balanceOf(u3), expectedSecond, "u3 should be 2nd (ties above count as one)");
+    }
+
+    function testClaimPrizeTiedFirstSplitsEvenly() public {
+        // u1 and u2 both score 20; u3 and u4 score 0
+        address u1 = vm.addr(1);
+        address u2 = vm.addr(2);
+        _joinAsUser(u1);
+        _joinAsUser(u2);
+        _joinAsUser(vm.addr(3));
+        _joinAsUser(vm.addr(4));
+        quiniPool.startPool();
+        _predict(u1, 0, 2, 1);
+        _predict(u1, 1, 1, 1);
+        _predict(u2, 0, 2, 1);
+        _predict(u2, 1, 1, 1);
+        _setResult(0, 2, 1);
+        _setResult(1, 1, 1);
+        vm.prank(quiniPool.owner());
+        quiniPool.finishPool();
+
+        uint256 halfOfFirst = (quiniPool.totalPool() * 50) / 100 / 2;
+
+        vm.prank(u1);
+        quiniPool.claimPrize();
+        vm.prank(u2);
+        quiniPool.claimPrize();
+
+        assertEq(token.balanceOf(u1), halfOfFirst, "u1 tied 1st should get half of 50%");
+        assertEq(token.balanceOf(u2), halfOfFirst, "u2 tied 1st should get half of 50%");
+    }
 }
