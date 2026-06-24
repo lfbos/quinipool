@@ -26,8 +26,8 @@ contract QuiniPool is Ownable {
     }
 
     struct Prediction {
-        uint8 predictedHomeScore;
-        uint8 predictedAwayScore;
+        uint8 homeScore;
+        uint8 awayScore;
         bool wasPredicted;
     }
 
@@ -82,6 +82,7 @@ contract QuiniPool is Ownable {
     // Events
     event PoolStarted(uint256 totalParticipants, uint256 totalPool);
     event PlayerJoined(address indexed player, uint256 entryFee);
+    event PredictionSubmitted(address indexed player, uint256 matchId, uint8 homeScore, uint8 awayScore);
 
     // Functions
 
@@ -112,5 +113,18 @@ contract QuiniPool is Ownable {
 
         // Emit an event PlayerJoined
         emit PlayerJoined(msg.sender, entryFee);
+    }
+
+    function submitPrediction(uint256 _matchId, uint8 _homeScore, uint8 _awayScore) external {
+        require(poolStatus == PoolStatus.Active, "Pool is not active");
+        require(hasParticipated[msg.sender], "You must join the pool first");
+        require(_matchId < totalMatches, "Invalid match ID");
+        require(block.timestamp < matches[_matchId].kickoffTime, "Cannot submit prediction after kickoff");
+
+        // Store the prediction
+        predictions[msg.sender][_matchId] =
+            Prediction({homeScore: _homeScore, awayScore: _awayScore, wasPredicted: true});
+
+        emit PredictionSubmitted(msg.sender, _matchId, _homeScore, _awayScore);
     }
 }

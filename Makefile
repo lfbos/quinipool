@@ -23,7 +23,7 @@ build:
 	forge build
 
 test:
-	forge test -vv
+	forge test -vvvv
 
 test-gas:
 	forge test --gas-report

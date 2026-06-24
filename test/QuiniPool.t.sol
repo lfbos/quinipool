@@ -145,4 +145,70 @@ contract QuiniPoolTest is Test {
         quiniPool.joinPool();
         vm.stopPrank();
     }
+
+    function testSubmitPredictionRevertsWhenPoolNotActive() public {
+        // Just one user joins the pool, so it remains in Open state
+        _joinAsUser(vm.addr(1));
+
+        // The user tries to submit a prediction while the pool is still open
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Pool is not active");
+        quiniPool.submitPrediction(0, 2, 1);
+    }
+
+    function testSubmitPredictionRevertsWhenUserNotJoined() public {
+        // Two users join the pool and start it
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
+
+        // A third user tries to submit a prediction without joining
+        vm.prank(vm.addr(3));
+        vm.expectRevert("You must join the pool first");
+        quiniPool.submitPrediction(0, 2, 1);
+    }
+
+    function testSubmitPredictionRevertsWhenMatchIdInvalid() public {
+        // Two users join the pool and start it
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
+
+        // A user tries to submit a prediction for an invalid match ID
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Invalid match ID");
+        quiniPool.submitPrediction(999, 2, 1);
+    }
+
+    function testSubmitPredictionRevertsWhenAfterKickoff() public {
+        // Two users join the pool and start it
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
+
+        // Fast forward time to after the kickoff of the first match
+        vm.warp(kickoffTimes[0] + 1);
+
+        // A user tries to submit a prediction for the first match after kickoff
+        vm.prank(vm.addr(1));
+        vm.expectRevert("Cannot submit prediction after kickoff");
+        quiniPool.submitPrediction(0, 2, 1);
+    }
+
+    function testSubmitPredictionSuccess() public {
+        // Two users join the pool and start it
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
+
+        // A user submits a valid prediction for the first match
+        vm.prank(vm.addr(1));
+        quiniPool.submitPrediction(0, 2, 1);
+
+        // Check if the prediction is stored correctly
+        (uint8 homeScore, uint8 awayScore, bool wasPredicted) = quiniPool.predictions(vm.addr(1), 0);
+        assertEq(homeScore, 2, "Home score should be 2");
+        assertEq(awayScore, 1, "Away score should be 1");
+        assertTrue(wasPredicted, "Prediction should be marked as submitted");
+    }
 }
