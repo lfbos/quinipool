@@ -80,9 +80,19 @@ contract QuiniPool is Ownable {
     }
 
     // Events
+    event PoolStarted(uint256 totalParticipants, uint256 totalPool);
     event PlayerJoined(address indexed player, uint256 entryFee);
 
     // Functions
+
+    function startPool() external onlyOwner {
+        require(poolStatus == PoolStatus.Open, "Pool is not open");
+        require(participants.length >= 2, "Need at least 2 participants to start the pool");
+
+        poolStatus = PoolStatus.Active;
+
+        emit PoolStarted(participants.length, totalPool);
+    }
 
     function joinPool() external {
         require(poolStatus == PoolStatus.Open, "Pool is not open for joining");

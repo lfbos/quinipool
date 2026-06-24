@@ -29,6 +29,45 @@ contract QuiniPoolTest is Test {
         quiniPool = new QuiniPool(IERC20(address(token)), entryFee, homeTeams, awayTeams, kickoffTimes);
     }
 
+    // Helpers
+    function _joinAsUser(address user) internal {
+        token.mint(user, entryFee);
+        vm.prank(user);
+        token.approve(address(quiniPool), entryFee);
+        vm.prank(user);
+        quiniPool.joinPool();
+    }
+
+    function testStartPool() public {
+        // Join the pool with two users
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+
+        // Start the pool
+        quiniPool.startPool();
+
+        // Check if the pool status is Active
+        assertEq(uint256(quiniPool.poolStatus()), uint256(QuiniPool.PoolStatus.Active), "Pool should be active");
+    }
+
+    function testStartPoolAlreadyClosed() public {
+        // Join the pool with two users
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+
+        // Start the pool
+        quiniPool.startPool();
+
+        // Try to start the pool again
+        vm.expectRevert("Pool is not open");
+        quiniPool.startPool();
+    }
+
+    function testStartPoolWithNoParticipants() public {
+        vm.expectRevert("Need at least 2 participants to start the pool");
+        quiniPool.startPool();
+    }
+
     function testJoinPool() public {
         // Simulate a user joining the pool
         address user = vm.addr(1);
@@ -92,13 +131,15 @@ contract QuiniPoolTest is Test {
     }
 
     function testJoinPoolRevertsWhenPoolNotOpen() public {
-        // Force pool out of Open status by writing storage directly.
-        // Slot layout: 0 _owner (Ownable), 1 token, 2 entryFee, 3 totalPool, 4 totalMatches, 5 poolStatus.
-        vm.store(address(quiniPool), bytes32(uint256(5)), bytes32(uint256(uint8(QuiniPool.PoolStatus.Active))));
+        // Lead the pool to a closed state
+        _joinAsUser(vm.addr(1));
+        _joinAsUser(vm.addr(2));
+        quiniPool.startPool();
 
-        address user = vm.addr(7);
-        vm.startPrank(user);
+        // A third user tries to join after the pool has started
+        address user = vm.addr(3);
         token.mint(user, entryFee);
+        vm.startPrank(user);
         token.approve(address(quiniPool), entryFee);
         vm.expectRevert("Pool is not open for joining");
         quiniPool.joinPool();
