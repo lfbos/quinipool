@@ -18,3 +18,10 @@ docs/
 .env
 .env.*
 !.env.example
+
+# Skill files
+.atl
+
+# Coverage files
+coverage/
+lcov.info
