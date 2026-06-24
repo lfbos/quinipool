@@ -23,6 +23,7 @@ contract QuiniPool {
         uint8 awayScore;
         bool resultSet;
     }
+
     struct Prediction {
         uint8 predictedHomeScore;
         uint8 predictedAwayScore;
